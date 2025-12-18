@@ -1,0 +1,59 @@
+ <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下载文件</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+        }
+        
+        .download-btn {
+            background: linear-gradient(to right, #2575fc, #6a11cb);
+            color: white;
+            font-size: 1.5rem;
+            font-weight: bold;
+            padding: 1.2rem 2.5rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+        }
+        
+        .download-btn:active {
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body>
+    <button class="download-btn" onclick="downloadFile()">下载 test.zip</button>
+
+    <script>
+        // 文件下载路径 - 直接指向服务器上的文件
+        const FILE_URL = '/resources/test.zip';
+        
+        function downloadFile() {
+            // 创建一个隐藏的a标签触发下载
+            const link = document.createElement('a');
+            link.href = FILE_URL;
+            link.download = 'test.zip';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
