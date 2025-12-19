@@ -348,18 +348,17 @@
     </div>
 
     <script>
-        // ==================== 修复1：简化配置，只声明一次 ====================
+        // ==================== 配置区域 ====================
         const SUPABASE_URL = "https://veovtfoqqwsyofrkiqok.supabase.co";
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlb3Z0Zm9xcXdzeW9mcmtpcW9rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMzY2MDYsImV4cCI6MjA4MTcxMjYwNn0.eFKO6y8uZOCNJF687zEFZsjRshthwVI7ZoB6mg1JJvY";
         
-        // 只在这里声明一次supabase
+        // 只在这里声明一次supabase（第94-95行）
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         
         // 全局变量
         let currentUser = null;
         let messageSubscription = null;
         
-        // ==================== 修复2：确保函数在最前面定义 ====================
         // 显示登录表单
         function showLogin() {
             document.getElementById('loginForm').style.display = 'flex';
