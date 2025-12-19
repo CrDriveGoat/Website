@@ -34,7 +34,7 @@
             display: none;
             flex-direction: column;
             min-height: 600px;
-            max-height: 80vh; /* 限制最大高度为视口的80% */
+            max-height: 80vh;
         }
         
         .auth-container.active, .chat-container.active {
@@ -47,13 +47,13 @@
             flex-direction: column;
             gap: 20px;
             flex: 1;
-            overflow-y: auto; /* 允许表单内容滚动 */
+            overflow-y: auto;
         }
         
         .auth-tabs {
             display: flex;
             border-bottom: 2px solid #f0f0f0;
-            flex-shrink: 0; /* 防止标签栏被压缩 */
+            flex-shrink: 0;
         }
         
         .auth-tab {
@@ -348,25 +348,26 @@
     </div>
 
     <script>
-        // ==================== 配置区域 ====================
+        // ==================== 修复1：简化配置，只声明一次 ====================
         const SUPABASE_URL = "https://veovtfoqqwsyofrkiqok.supabase.co";
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlb3Z0Zm9xcXdzeW9mcmtpcW9rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMzY2MDYsImV4cCI6MjA4MTcxMjYwNn0.eFKO6y8uZOCNJF687zEFZsjRshthwVI7ZoB6mg1JJvY";
-        // ==================== 配置结束 ====================
+        
+        // 只在这里声明一次supabase
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         
         // 全局变量
-        let supabase = null;
         let currentUser = null;
         let messageSubscription = null;
         
+        // ==================== 修复2：确保函数在最前面定义 ====================
         // 显示登录表单
         function showLogin() {
             document.getElementById('loginForm').style.display = 'flex';
             document.getElementById('registerForm').style.display = 'none';
             
-            document.querySelectorAll('.auth-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.auth-tab')[0].classList.add('active');
+            const tabs = document.querySelectorAll('.auth-tab');
+            tabs[0].classList.add('active');
+            tabs[1].classList.remove('active');
             
             document.getElementById('loginAlert').style.display = 'none';
         }
@@ -376,10 +377,9 @@
             document.getElementById('loginForm').style.display = 'none';
             document.getElementById('registerForm').style.display = 'flex';
             
-            document.querySelectorAll('.auth-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.auth-tab')[1].classList.add('active');
+            const tabs = document.querySelectorAll('.auth-tab');
+            tabs[0].classList.remove('active');
+            tabs[1].classList.add('active');
             
             document.getElementById('registerAlert').style.display = 'none';
         }
@@ -388,16 +388,6 @@
         async function initializeApp() {
             try {
                 console.log("正在初始化Supabase...");
-                
-                // 简化配置检查
-                if (!SUPABASE_URL || !SUPABASE_KEY) {
-                    updateConnectionStatus(false, "请配置Supabase URL和Key");
-                    console.error("请配置Supabase URL和Key");
-                    return false;
-                }
-                
-                // 初始化Supabase
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 
                 // 测试连接
                 const { error } = await supabase.from('profiles').select('count').limit(1);
@@ -526,7 +516,6 @@
                     ]);
                 
                 if (profileError) {
-                    // 如果表不存在，提示用户创建表
                     if (profileError.message.includes('relation "profiles" does not exist')) {
                         showAlert(alertDiv, '请先在Supabase中创建profiles表', 'error');
                         console.error("profiles表不存在，请在Supabase SQL编辑器中运行：");
@@ -712,7 +701,7 @@ CREATE TABLE IF NOT EXISTS public.messages (
                 }
                 
                 messages.forEach(msg => {
-                    if (msg.is_deleted) return; // 被删除的消息不显示
+                    if (msg.is_deleted) return;
                     
                     const messageElement = document.createElement('div');
                     const isOwnMessage = msg.user_id === currentUser.id;
@@ -791,7 +780,7 @@ CREATE TABLE IF NOT EXISTS public.messages (
                     .from('messages')
                     .update({ is_deleted: true })
                     .eq('id', messageId)
-                    .eq('user_id', currentUser.id); // 只能撤回自己的消息
+                    .eq('user_id', currentUser.id);
                 
                 if (error) throw error;
                 
@@ -830,7 +819,6 @@ CREATE TABLE IF NOT EXISTS public.messages (
             element.className = `alert alert-${type}`;
             element.style.display = 'block';
             
-            // 3秒后隐藏
             setTimeout(() => {
                 element.style.display = 'none';
             }, 3000);
