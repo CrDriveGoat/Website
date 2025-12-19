@@ -240,6 +240,8 @@
             border: 1px solid #6ee7b7;
         }
     </style>
+    <!-- 引入Supabase库 -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <div class="container">
@@ -255,8 +257,8 @@
                 <div class="alert" id="loginAlert" style="display: none;"></div>
                 
                 <div class="form-group">
-                    <label for="loginUsername">用户名</label>
-                    <input type="text" id="loginUsername" required>
+                    <label for="loginEmail">邮箱</label>
+                    <input type="email" id="loginEmail" required>
                 </div>
                 
                 <div class="form-group">
@@ -274,6 +276,11 @@
                 <div class="form-group">
                     <label for="registerUsername">用户名</label>
                     <input type="text" id="registerUsername" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="registerEmail">邮箱</label>
+                    <input type="email" id="registerEmail" required>
                 </div>
                 
                 <div class="form-group">
@@ -316,60 +323,18 @@
     </div>
 
     <script>
-        // 模拟"数据库" - 使用localStorage存储用户和消息
-        class Database {
-            constructor() {
-                this.initStorage();
-            }
-            
-            initStorage() {
-                if (!localStorage.getItem('users')) {
-                    localStorage.setItem('users', JSON.stringify({}));
-                }
-                if (!localStorage.getItem('messages')) {
-                    localStorage.setItem('messages', JSON.stringify([]));
-                }
-            }
-            
-            // 用户相关方法
-            getUser(username) {
-                const users = JSON.parse(localStorage.getItem('users'));
-                return users[username];
-            }
-            
-            saveUser(username, password) {
-                const users = JSON.parse(localStorage.getItem('users'));
-                users[username] = { username, password };
-                localStorage.setItem('users', JSON.stringify(users));
-            }
-            
-            // 消息相关方法
-            saveMessage(message) {
-                const messages = JSON.parse(localStorage.getItem('messages'));
-                messages.push(message);
-                localStorage.setItem('messages', JSON.stringify(messages));
-            }
-            
-            getMessages() {
-                return JSON.parse(localStorage.getItem('messages'));
-            }
-            
-            deleteMessage(messageId, username) {
-                const messages = JSON.parse(localStorage.getItem('messages'));
-                const index = messages.findIndex(msg => 
-                    msg.id === messageId && msg.sender === username
-                );
-                
-                if (index !== -1) {
-                    messages.splice(index, 1);
-                    localStorage.setItem('messages', JSON.stringify(messages));
-                    return true;
-                }
-                return false;
-            }
-        }
+        // ==================== 【第1步：填写你的API密钥】 ====================
+        // 从Supabase获取这两个值：
+        // 1. 登录Supabase → 点击你的项目 → Settings → API
+        // 2. 复制 Project URL 和 anon public key
+        const SUPABASE_URL = "https://veovtfoqqwsyofrkiqok.supabase.co"; 
+        const SUPABASE_KEY = "sb_publishable_StAZYyqD8I3_mbaZ_mchRQ_t0Q6B7FC"; 
+        // ==================== 【填写结束】 ====================
         
-        const db = new Database();
+        // 初始化Supabase
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // 当前登录的用户
         let currentUser = null;
         
         // 显示登录表单
@@ -398,77 +363,126 @@
             document.getElementById('registerAlert').style.display = 'none';
         }
         
-        // 登录
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
+        // 用户注册
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const username = document.getElementById('loginUsername').value.trim();
-            const password = document.getElementById('loginPassword').value;
-            const alertDiv = document.getElementById('loginAlert');
-            
-            if (!username || !password) {
-                showAlert(alertDiv, '请输入用户名和密码', 'error');
-                return;
-            }
-            
-            const user = db.getUser(username);
-            
-            if (!user || user.password !== password) {
-                showAlert(alertDiv, '用户名或密码错误', 'error');
-                return;
-            }
-            
-            // 登录成功
-            currentUser = user;
-            document.getElementById('currentUsername').textContent = currentUser.username;
-            document.getElementById('authContainer').classList.remove('active');
-            document.getElementById('chatContainer').classList.add('active');
-            loadMessages();
-            
-            // 清空表单
-            document.getElementById('loginUsername').value = '';
-            document.getElementById('loginPassword').value = '';
-        });
-        
-        // 注册
-        document.getElementById('registerForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('registerUsername').value.trim();
+            const email = document.getElementById('registerEmail').value;
             const password = document.getElementById('registerPassword').value;
+            const username = document.getElementById('registerUsername').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
             const alertDiv = document.getElementById('registerAlert');
             
-            if (!username || !password) {
-                showAlert(alertDiv, '请输入用户名和密码', 'error');
-                return;
-            }
-            
+            // 验证输入
             if (password !== confirmPassword) {
                 showAlert(alertDiv, '两次输入的密码不一致', 'error');
                 return;
             }
             
-            if (db.getUser(username)) {
-                showAlert(alertDiv, '用户名已存在', 'error');
+            if (!email.includes('@')) {
+                showAlert(alertDiv, '请输入有效的邮箱地址', 'error');
                 return;
             }
             
-            // 注册成功
-            db.saveUser(username, password);
-            showAlert(alertDiv, '注册成功，请登录', 'success');
+            try {
+                // 1. 在Supabase中注册用户
+                const { data: authData, error: authError } = await supabase.auth.signUp({
+                    email: email,
+                    password: password
+                });
+                
+                if (authError) throw authError;
+                
+                // 2. 在profiles表中创建用户资料
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .insert([
+                        { 
+                            id: authData.user.id,
+                            username: username,
+                            created_at: new Date().toISOString()
+                        }
+                    ]);
+                
+                if (profileError) {
+                    // 如果是因为表不存在，先创建表
+                    if (profileError.message.includes('relation "profiles" does not exist')) {
+                        // 先创建profiles表
+                        await createProfilesTable();
+                        // 再插入数据
+                        await supabase
+                            .from('profiles')
+                            .insert([
+                                { 
+                                    id: authData.user.id,
+                                    username: username,
+                                    created_at: new Date().toISOString()
+                                }
+                            ]);
+                    } else {
+                        throw profileError;
+                    }
+                }
+                
+                showAlert(alertDiv, '注册成功！请登录', 'success');
+                
+                // 清空表单
+                this.reset();
+                showLogin();
+                
+            } catch (error) {
+                showAlert(alertDiv, '注册失败: ' + error.message, 'error');
+            }
+        });
+        
+        // 用户登录
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
             
-            // 清空表单
-            document.getElementById('registerUsername').value = '';
-            document.getElementById('registerPassword').value = '';
-            document.getElementById('confirmPassword').value = '';
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const alertDiv = document.getElementById('loginAlert');
             
-            // 切换到登录界面
-            setTimeout(showLogin, 1500);
+            try {
+                // 使用邮箱密码登录
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+                
+                if (error) throw error;
+                
+                // 登录成功
+                currentUser = data.user;
+                
+                // 获取用户信息
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('username')
+                    .eq('id', currentUser.id)
+                    .single();
+                
+                document.getElementById('currentUsername').textContent = profile?.username || email;
+                document.getElementById('authContainer').classList.remove('active');
+                document.getElementById('chatContainer').classList.add('active');
+                
+                // 确保messages表存在
+                await createMessagesTable();
+                // 加载消息
+                await loadMessages();
+                // 开始监听新消息
+                setupRealtime();
+                
+                // 清空表单
+                this.reset();
+                
+            } catch (error) {
+                showAlert(alertDiv, '登录失败: ' + error.message, 'error');
+            }
         });
         
         // 发送消息
-        function sendMessage() {
+        async function sendMessage() {
             if (!currentUser) return;
             
             const input = document.getElementById('messageInput');
@@ -476,99 +490,252 @@
             
             if (!content) return;
             
-            const message = {
-                id: Date.now(),
-                sender: currentUser.username,
-                content: content,
-                timestamp: new Date().toLocaleTimeString('zh-CN', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                })
-            };
-            
-            db.saveMessage(message);
-            input.value = '';
-            loadMessages();
+            try {
+                const { error } = await supabase
+                    .from('messages')
+                    .insert([
+                        { 
+                            user_id: currentUser.id,
+                            content: content,
+                            created_at: new Date().toISOString(),
+                            is_deleted: false
+                        }
+                    ]);
+                
+                if (error) throw error;
+                
+                input.value = '';
+                
+            } catch (error) {
+                console.error('发送失败:', error);
+                alert('发送失败: ' + error.message);
+            }
         }
         
-        // 加载消息
-        function loadMessages() {
-            const messagesContainer = document.getElementById('chatMessages');
-            const messages = db.getMessages();
-            
-            messagesContainer.innerHTML = '';
-            
-            messages.forEach(msg => {
-                const isOwnMessage = msg.sender === currentUser.username;
-                const messageElement = document.createElement('div');
-                messageElement.className = `message ${isOwnMessage ? 'own' : 'other'}`;
+        // 加载历史消息
+        async function loadMessages() {
+            try {
+                // 获取用户信息
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('username')
+                    .eq('id', currentUser.id)
+                    .single();
                 
-                messageElement.innerHTML = `
-                    <div class="message-info">
-                        <span class="message-username">${msg.sender}</span>
-                        <span class="message-time">${msg.timestamp}</span>
-                    </div>
-                    <div>${msg.content}</div>
-                    ${isOwnMessage ? `<button class="delete-btn" onclick="deleteMessage(${msg.id})">撤回</button>` : ''}
-                `;
+                const currentUsername = profile?.username;
                 
-                messagesContainer.appendChild(messageElement);
-            });
-            
-            // 滚动到底部
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                // 获取所有消息
+                const { data: messages, error } = await supabase
+                    .from('messages')
+                    .select(`
+                        id,
+                        content,
+                        created_at,
+                        is_deleted,
+                        user_id,
+                        profiles (username)
+                    `)
+                    .order('created_at', { ascending: true });
+                
+                if (error) {
+                    // 如果表不存在，先创建
+                    if (error.message.includes('relation "messages" does not exist')) {
+                        await createMessagesTable();
+                        return; // 表刚创建，没有数据
+                    }
+                    throw error;
+                }
+                
+                const messagesContainer = document.getElementById('chatMessages');
+                messagesContainer.innerHTML = '';
+                
+                if (!messages || messages.length === 0) {
+                    messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">还没有消息，开始聊天吧！</div>';
+                    return;
+                }
+                
+                messages.forEach(msg => {
+                    if (msg.is_deleted) return; // 被删除的消息不显示
+                    
+                    const messageElement = document.createElement('div');
+                    const isOwnMessage = msg.user_id === currentUser.id;
+                    
+                    messageElement.className = `message ${isOwnMessage ? 'own' : 'other'}`;
+                    messageElement.innerHTML = `
+                        <div class="message-info">
+                            <span class="message-username">${msg.profiles?.username || '用户'}</span>
+                            <span class="message-time">${new Date(msg.created_at).toLocaleTimeString('zh-CN', { 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                            })}</span>
+                        </div>
+                        <div>${msg.content}</div>
+                        ${isOwnMessage ? `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">撤回</button>` : ''}
+                    `;
+                    
+                    messagesContainer.appendChild(messageElement);
+                });
+                
+                // 滚动到底部
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
+            } catch (error) {
+                console.error('加载消息失败:', error);
+            }
         }
         
-        // 删除消息
-        function deleteMessage(messageId) {
-            if (db.deleteMessage(messageId, currentUser.username)) {
-                loadMessages();
+        // 实时监听新消息
+        function setupRealtime() {
+            // 监听messages表的新消息
+            supabase
+                .channel('public:messages')
+                .on('postgres_changes', 
+                    { 
+                        event: 'INSERT', 
+                        schema: 'public', 
+                        table: 'messages' 
+                    }, 
+                    (payload) => {
+                        console.log('收到新消息:', payload.new);
+                        loadMessages(); // 重新加载消息
+                    }
+                )
+                .on('postgres_changes',
+                    {
+                        event: 'UPDATE',
+                        schema: 'public',
+                        table: 'messages'
+                    },
+                    (payload) => {
+                        console.log('消息更新:', payload.new);
+                        loadMessages(); // 重新加载消息
+                    }
+                )
+                .subscribe();
+        }
+        
+        // 撤回消息
+        async function deleteMessage(messageId) {
+            if (!currentUser) return;
+            
+            if (!confirm('确定要撤回这条消息吗？')) return;
+            
+            try {
+                const { error } = await supabase
+                    .from('messages')
+                    .update({ is_deleted: true })
+                    .eq('id', messageId)
+                    .eq('user_id', currentUser.id); // 只能撤回自己的消息
+                
+                if (error) throw error;
+                
+                console.log('消息已撤回');
+                
+            } catch (error) {
+                console.error('撤回失败:', error);
+                alert('撤回失败: ' + error.message);
             }
         }
         
         // 退出登录
-        function logout() {
-            currentUser = null;
-            document.getElementById('chatContainer').classList.remove('active');
-            document.getElementById('authContainer').classList.add('active');
-            showLogin();
+        async function logout() {
+            try {
+                const { error } = await supabase.auth.signOut();
+                if (error) throw error;
+                
+                currentUser = null;
+                document.getElementById('chatContainer').classList.remove('active');
+                document.getElementById('authContainer').classList.add('active');
+                showLogin();
+                
+            } catch (error) {
+                console.error('退出失败:', error);
+            }
         }
         
-        // 显示提示
+        // 辅助函数：显示提示
         function showAlert(element, message, type) {
             element.textContent = message;
             element.className = `alert alert-${type}`;
             element.style.display = 'block';
+            
+            // 3秒后隐藏
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 3000);
         }
         
-        // 初始化
-        window.addEventListener('load', function() {
-            // 检查是否已有用户登录（在页面刷新后保持登录状态）
-            const savedUser = localStorage.getItem('currentUser');
-            if (savedUser) {
-                const user = JSON.parse(savedUser);
-                if (db.getUser(user.username)) {
-                    currentUser = user;
-                    document.getElementById('currentUsername').textContent = currentUser.username;
-                    document.getElementById('authContainer').classList.remove('active');
-                    document.getElementById('chatContainer').classList.add('active');
-                    loadMessages();
-                }
+        // 创建profiles表（如果不存在）
+        async function createProfilesTable() {
+            try {
+                // 在Supabase中无法直接通过前端JS创建表
+                // 需要手动在SQL编辑器中创建
+                console.log('请在Supabase的SQL编辑器中运行以下SQL创建profiles表:');
+                console.log(`
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+                `);
+                
+                alert('请在Supabase的SQL编辑器中创建profiles表，查看控制台获取SQL语句');
+            } catch (error) {
+                console.error('创建表失败:', error);
             }
+        }
+        
+        // 创建messages表（如果不存在）
+        async function createMessagesTable() {
+            try {
+                // 在Supabase中无法直接通过前端JS创建表
+                // 需要手动在SQL编辑器中创建
+                console.log('请在Supabase的SQL编辑器中运行以下SQL创建messages表:');
+                console.log(`
+CREATE TABLE IF NOT EXISTS public.messages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT now(),
+  is_deleted BOOLEAN DEFAULT FALSE
+);
+                `);
+                
+                // 注意：实际上这里不能自动创建表，需要用户手动在Supabase后台创建
+            } catch (error) {
+                console.error('创建表失败:', error);
+            }
+        }
+        
+        // 页面加载时检查登录状态
+        window.addEventListener('DOMContentLoaded', async function() {
+            // 检查是否已登录
+            const { data } = await supabase.auth.getSession();
             
-            // 监听Enter键发送消息
-            document.getElementById('messageInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
+            if (data.session) {
+                currentUser = data.session.user;
+                
+                // 获取用户信息
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('username')
+                    .eq('id', currentUser.id)
+                    .single();
+                
+                document.getElementById('currentUsername').textContent = profile?.username || currentUser.email;
+                document.getElementById('authContainer').classList.remove('active');
+                document.getElementById('chatContainer').classList.add('active');
+                
+                await loadMessages();
+                setupRealtime();
+            }
         });
         
-        // 页面卸载前保存当前用户
-        window.addEventListener('beforeunload', function() {
-            if (currentUser) {
-                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        // 监听键盘事件
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
             }
         });
     </script>
