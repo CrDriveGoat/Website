@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>聊天应用</title>
+    <title>聊天室</title>
     <style>
         * {
             margin: 0;
@@ -239,6 +239,23 @@
             color: #059669;
             border: 1px solid #6ee7b7;
         }
+        
+        .status {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .status.online {
+            background: #d1fae5;
+            color: #059669;
+        }
+        
+        .status.offline {
+            background: #fee2e2;
+            color: #dc2626;
+        }
     </style>
     <!-- 引入Supabase库 -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -248,8 +265,8 @@
         <!-- 登录/注册界面 -->
         <div class="auth-container active" id="authContainer">
             <div class="auth-tabs">
-                <button class="auth-tab active" onclick="showLogin()">登录</button>
-                <button class="auth-tab" onclick="showRegister()">注册</button>
+                <button class="auth-tab active" onclick="showLogin()" type="button">登录</button>
+                <button class="auth-tab" onclick="showRegister()" type="button">注册</button>
             </div>
             
             <form class="auth-form" id="loginForm">
@@ -267,6 +284,8 @@
                 </div>
                 
                 <button type="submit" class="btn-primary">登录</button>
+                
+                <div class="status offline" id="loginStatus">Supabase: 未连接</div>
             </form>
             
             <form class="auth-form" id="registerForm" style="display: none;">
@@ -294,6 +313,8 @@
                 </div>
                 
                 <button type="submit" class="btn-primary">注册</button>
+                
+                <div class="status offline" id="registerStatus">Supabase: 未连接</div>
             </form>
         </div>
         
@@ -304,38 +325,136 @@
                     <h3>聊天室</h3>
                     <p>当前用户: <span class="current-user" id="currentUsername"></span></p>
                 </div>
-                <button class="btn-logout" onclick="logout()">退出登录</button>
+                <button class="btn-logout" onclick="logout()" type="button">退出登录</button>
             </div>
             
             <div class="chat-messages" id="chatMessages">
-                <!-- 消息会动态添加到这里 -->
+                <div style="text-align: center; color: #666; padding: 20px;">
+                    正在连接聊天室...
+                </div>
             </div>
             
             <div class="chat-input-container">
                 <input type="text" 
                        class="chat-input" 
                        id="messageInput" 
-                       placeholder="输入消息..."
-                       onkeypress="if(event.key === 'Enter') sendMessage()">
-                <button class="btn-primary" onclick="sendMessage()">发送</button>
+                       placeholder="输入消息...">
+                <button class="btn-primary" onclick="sendMessage()" type="button">发送</button>
             </div>
         </div>
     </div>
 
     <script>
-        // ==================== 【第1步：填写你的API密钥】 ====================
-        // 从Supabase获取这两个值：
-        // 1. 登录Supabase → 点击你的项目 → Settings → API
-        // 2. 复制 Project URL 和 anon public key
-        const SUPABASE_URL = "https://veovtfoqqwsyofrkiqok.supabase.co"; 
-        const SUPABASE_KEY = "sb_publishable_StAZYyqD8I3_mbaZ_mchRQ_t0Q6B7FC"; 
-        // ==================== 【填写结束】 ====================
+        // ==================== 配置区域 ====================
+        // 【重要】在这里填写你的Supabase信息
+        const SUPABASE_URL = "https://veovtfoqqwsyofrkiqok.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_StAZYyqD8I3_mbaZ_mchRQ_t0Q6B7FC";
+        // ==================== 配置结束 ====================
         
-        // 初始化Supabase
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        
-        // 当前登录的用户
+        // 全局变量
+        let supabase = null;
         let currentUser = null;
+        let messageSubscription = null;
+        
+        // 初始化函数
+        async function initializeApp() {
+            try {
+                console.log("正在初始化Supabase...");
+                
+                if (!SUPABASE_URL || SUPABASE_URL === "你的项目URL填这里" || 
+                    !SUPABASE_KEY || SUPABASE_KEY === "你的API密钥填这里") {
+                    showAlert(document.getElementById('loginStatus'), "请先配置Supabase URL和Key", "error");
+                    showAlert(document.getElementById('registerStatus'), "请先配置Supabase URL和Key", "error");
+                    console.error("请先配置Supabase URL和Key");
+                    return false;
+                }
+                
+                // 初始化Supabase（只做一次）
+                if (!window.supabaseClient) {
+                    window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                }
+                supabase = window.supabaseClient;
+                
+                // 测试连接
+                const { data, error } = await supabase.from('profiles').select('count').limit(1);
+                
+                if (error) {
+                    if (error.message.includes('relation "profiles" does not exist')) {
+                        // 表不存在，但连接成功
+                        updateConnectionStatus(true, "数据库连接成功，但profiles表不存在");
+                        console.log("连接成功，但profiles表不存在。请创建数据库表。");
+                        return true;
+                    } else {
+                        updateConnectionStatus(false, "连接失败: " + error.message);
+                        console.error("连接失败:", error);
+                        return false;
+                    }
+                } else {
+                    updateConnectionStatus(true, "Supabase连接成功");
+                    console.log("Supabase连接成功");
+                    
+                    // 检查登录状态
+                    checkAuthStatus();
+                    return true;
+                }
+            } catch (error) {
+                updateConnectionStatus(false, "初始化失败: " + error.message);
+                console.error("初始化失败:", error);
+                return false;
+            }
+        }
+        
+        // 更新连接状态显示
+        function updateConnectionStatus(isConnected, message) {
+            const statusElements = document.querySelectorAll('.status');
+            statusElements.forEach(el => {
+                el.textContent = message;
+                el.className = `status ${isConnected ? 'online' : 'offline'}`;
+            });
+        }
+        
+        // 检查认证状态
+        async function checkAuthStatus() {
+            try {
+                const { data, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    console.error("检查会话失败:", error);
+                    return;
+                }
+                
+                if (data.session) {
+                    // 用户已登录
+                    currentUser = data.session.user;
+                    console.log("用户已登录:", currentUser.email);
+                    
+                    // 获取用户信息
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('username')
+                        .eq('id', currentUser.id)
+                        .single();
+                    
+                    document.getElementById('currentUsername').textContent = profile?.username || currentUser.email;
+                    document.getElementById('authContainer').classList.remove('active');
+                    document.getElementById('chatContainer').classList.add('active');
+                    
+                    // 加载消息
+                    await loadMessages();
+                    
+                    // 开始监听新消息
+                    setupRealtime();
+                    
+                    return true;
+                } else {
+                    console.log("用户未登录");
+                    return false;
+                }
+            } catch (error) {
+                console.error("检查认证状态失败:", error);
+                return false;
+            }
+        }
         
         // 显示登录表单
         function showLogin() {
@@ -384,6 +503,11 @@
                 return;
             }
             
+            if (password.length < 6) {
+                showAlert(alertDiv, '密码至少需要6位', 'error');
+                return;
+            }
+            
             try {
                 // 1. 在Supabase中注册用户
                 const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -405,20 +529,18 @@
                     ]);
                 
                 if (profileError) {
-                    // 如果是因为表不存在，先创建表
+                    // 如果表不存在，提示用户创建表
                     if (profileError.message.includes('relation "profiles" does not exist')) {
-                        // 先创建profiles表
-                        await createProfilesTable();
-                        // 再插入数据
-                        await supabase
-                            .from('profiles')
-                            .insert([
-                                { 
-                                    id: authData.user.id,
-                                    username: username,
-                                    created_at: new Date().toISOString()
-                                }
-                            ]);
+                        showAlert(alertDiv, '请先在Supabase中创建profiles表', 'error');
+                        console.error("profiles表不存在，请在Supabase SQL编辑器中运行：");
+                        console.log(`
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT now()
+);
+                        `);
+                        return;
                     } else {
                         throw profileError;
                     }
@@ -431,7 +553,12 @@
                 showLogin();
                 
             } catch (error) {
-                showAlert(alertDiv, '注册失败: ' + error.message, 'error');
+                if (error.message.includes('User already registered')) {
+                    showAlert(alertDiv, '该邮箱已注册', 'error');
+                } else {
+                    showAlert(alertDiv, '注册失败: ' + error.message, 'error');
+                }
+                console.error('注册错误:', error);
             }
         });
         
@@ -442,6 +569,11 @@
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
             const alertDiv = document.getElementById('loginAlert');
+            
+            if (!email || !password) {
+                showAlert(alertDiv, '请输入邮箱和密码', 'error');
+                return;
+            }
             
             try {
                 // 使用邮箱密码登录
@@ -466,29 +598,39 @@
                 document.getElementById('authContainer').classList.remove('active');
                 document.getElementById('chatContainer').classList.add('active');
                 
-                // 确保messages表存在
-                await createMessagesTable();
-                // 加载消息
-                await loadMessages();
-                // 开始监听新消息
-                setupRealtime();
-                
                 // 清空表单
                 this.reset();
                 
+                // 加载消息
+                await loadMessages();
+                
+                // 开始监听新消息
+                setupRealtime();
+                
             } catch (error) {
-                showAlert(alertDiv, '登录失败: ' + error.message, 'error');
+                if (error.message === 'Invalid login credentials') {
+                    showAlert(alertDiv, '邮箱或密码错误', 'error');
+                } else {
+                    showAlert(alertDiv, '登录失败: ' + error.message, 'error');
+                }
+                console.error('登录错误:', error);
             }
         });
         
         // 发送消息
         async function sendMessage() {
-            if (!currentUser) return;
+            if (!currentUser) {
+                alert('请先登录');
+                return;
+            }
             
             const input = document.getElementById('messageInput');
             const content = input.value.trim();
             
-            if (!content) return;
+            if (!content) {
+                alert('请输入消息内容');
+                return;
+            }
             
             try {
                 const { error } = await supabase
@@ -502,9 +644,26 @@
                         }
                     ]);
                 
-                if (error) throw error;
+                if (error) {
+                    if (error.message.includes('relation "messages" does not exist')) {
+                        alert('messages表不存在，请在Supabase中创建');
+                        console.error("messages表不存在，请在Supabase SQL编辑器中运行：");
+                        console.log(`
+CREATE TABLE IF NOT EXISTS public.messages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT now(),
+  is_deleted BOOLEAN DEFAULT FALSE
+);
+                        `);
+                        return;
+                    }
+                    throw error;
+                }
                 
                 input.value = '';
+                input.focus();
                 
             } catch (error) {
                 console.error('发送失败:', error);
@@ -515,6 +674,9 @@
         // 加载历史消息
         async function loadMessages() {
             try {
+                const messagesContainer = document.getElementById('chatMessages');
+                messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">正在加载消息...</div>';
+                
                 // 获取用户信息
                 const { data: profile } = await supabase
                     .from('profiles')
@@ -538,15 +700,13 @@
                     .order('created_at', { ascending: true });
                 
                 if (error) {
-                    // 如果表不存在，先创建
                     if (error.message.includes('relation "messages" does not exist')) {
-                        await createMessagesTable();
-                        return; // 表刚创建，没有数据
+                        messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">聊天室已就绪，发送第一条消息吧！</div>';
+                        return;
                     }
                     throw error;
                 }
                 
-                const messagesContainer = document.getElementById('chatMessages');
                 messagesContainer.innerHTML = '';
                 
                 if (!messages || messages.length === 0) {
@@ -570,24 +730,31 @@
                             })}</span>
                         </div>
                         <div>${msg.content}</div>
-                        ${isOwnMessage ? `<button class="delete-btn" onclick="deleteMessage('${msg.id}')">撤回</button>` : ''}
+                        ${isOwnMessage ? `<button class="delete-btn" onclick="deleteMessage('${msg.id}')" type="button">撤回</button>` : ''}
                     `;
                     
                     messagesContainer.appendChild(messageElement);
                 });
                 
                 // 滚动到底部
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                setTimeout(() => {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, 100);
                 
             } catch (error) {
                 console.error('加载消息失败:', error);
+                const messagesContainer = document.getElementById('chatMessages');
+                messagesContainer.innerHTML = '<div style="text-align: center; color: #dc2626; padding: 20px;">加载消息失败: ' + error.message + '</div>';
             }
         }
         
         // 实时监听新消息
         function setupRealtime() {
-            // 监听messages表的新消息
-            supabase
+            if (messageSubscription) {
+                supabase.removeChannel(messageSubscription);
+            }
+            
+            messageSubscription = supabase
                 .channel('public:messages')
                 .on('postgres_changes', 
                     { 
@@ -597,7 +764,7 @@
                     }, 
                     (payload) => {
                         console.log('收到新消息:', payload.new);
-                        loadMessages(); // 重新加载消息
+                        loadMessages();
                     }
                 )
                 .on('postgres_changes',
@@ -608,10 +775,12 @@
                     },
                     (payload) => {
                         console.log('消息更新:', payload.new);
-                        loadMessages(); // 重新加载消息
+                        loadMessages();
                     }
                 )
-                .subscribe();
+                .subscribe((status) => {
+                    console.log('实时连接状态:', status);
+                });
         }
         
         // 撤回消息
@@ -640,6 +809,11 @@
         // 退出登录
         async function logout() {
             try {
+                if (messageSubscription) {
+                    supabase.removeChannel(messageSubscription);
+                    messageSubscription = null;
+                }
+                
                 const { error } = await supabase.auth.signOut();
                 if (error) throw error;
                 
@@ -665,78 +839,18 @@
             }, 3000);
         }
         
-        // 创建profiles表（如果不存在）
-        async function createProfilesTable() {
-            try {
-                // 在Supabase中无法直接通过前端JS创建表
-                // 需要手动在SQL编辑器中创建
-                console.log('请在Supabase的SQL编辑器中运行以下SQL创建profiles表:');
-                console.log(`
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  username VARCHAR(50) UNIQUE NOT NULL,
-  created_at TIMESTAMP DEFAULT now()
-);
-                `);
-                
-                alert('请在Supabase的SQL编辑器中创建profiles表，查看控制台获取SQL语句');
-            } catch (error) {
-                console.error('创建表失败:', error);
-            }
-        }
-        
-        // 创建messages表（如果不存在）
-        async function createMessagesTable() {
-            try {
-                // 在Supabase中无法直接通过前端JS创建表
-                // 需要手动在SQL编辑器中创建
-                console.log('请在Supabase的SQL编辑器中运行以下SQL创建messages表:');
-                console.log(`
-CREATE TABLE IF NOT EXISTS public.messages (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID NOT NULL,
-  content TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT now(),
-  is_deleted BOOLEAN DEFAULT FALSE
-);
-                `);
-                
-                // 注意：实际上这里不能自动创建表，需要用户手动在Supabase后台创建
-            } catch (error) {
-                console.error('创建表失败:', error);
-            }
-        }
-        
-        // 页面加载时检查登录状态
-        window.addEventListener('DOMContentLoaded', async function() {
-            // 检查是否已登录
-            const { data } = await supabase.auth.getSession();
-            
-            if (data.session) {
-                currentUser = data.session.user;
-                
-                // 获取用户信息
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('username')
-                    .eq('id', currentUser.id)
-                    .single();
-                
-                document.getElementById('currentUsername').textContent = profile?.username || currentUser.email;
-                document.getElementById('authContainer').classList.remove('active');
-                document.getElementById('chatContainer').classList.add('active');
-                
-                await loadMessages();
-                setupRealtime();
-            }
-        });
-        
         // 监听键盘事件
         document.getElementById('messageInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
+        });
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("页面加载完成，开始初始化...");
+            initializeApp();
         });
     </script>
 </body>
